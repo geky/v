@@ -6,6 +6,7 @@
 #define V_TBL
 
 #include "var.h"
+#include "err.h"
 #include "num.h"
 
 #include <assert.h>
@@ -41,6 +42,12 @@ struct tbl {
 // which is used as its handle in a var
 tbl_t *tbl_create(len_t size);
 
+// Preallocates memory, using the lazy tbl_create function
+// is preferred, however this can be used to avoid checking
+// for errors during insertions.
+tbl_t *tbl_createlist(len_t size);
+tbl_t *tbl_createhash(len_t size);
+
 // Called by garbage collector to clean up
 void tbl_destroy(void *);
 
@@ -55,14 +62,14 @@ var_t tbl_lookdn(tbl_t *, var_t key, len_t i);
 
 // Recursively assigns a value in the table with the given key
 // decends down the tail chain until its found
-void tbl_assign(tbl_t *, var_t key, var_t val);
+err_t tbl_assign(tbl_t *, var_t key, var_t val);
 
 // Inserts a value in the table with the given key
 // without decending down the tail chain
-void tbl_insert(tbl_t *, var_t key, var_t val);
+err_t tbl_insert(tbl_t *, var_t key, var_t val);
 
 // Sets the next index in the table with the value
-void tbl_add(tbl_t *, var_t val);
+err_t tbl_add(tbl_t *, var_t val);
 
 
 // Performs iteration on a table
@@ -108,20 +115,22 @@ var_t tbl_repr(var_t v);
 
 // Accessing table pointers with the ro flag
 static inline bool tbl_isro(tbl_t *tbl) {
-    return 0x1 & (uint32_t)tbl;
+    return 0x2 & (uint32_t)tbl;
 }
 
 static inline tbl_t *tbl_ro(tbl_t *tbl) {
-    return (tbl_t *)(0x1 | (uint32_t)tbl);
+    return (tbl_t *)(0x2 | (uint32_t)tbl);
 }
 
 static inline tbl_t *tbl_readp(tbl_t *tbl) {
-    return (tbl_t *)(~0x1 & (uint32_t)tbl);
+    return (tbl_t *)(~0x2 & (uint32_t)tbl);
 }
 
 static inline tbl_t *tbl_writep(tbl_t *tbl) {
-    assert(!tbl_isro(tbl)); // TODO error on const tbl
-    return tbl;
+    if (tbl_isro(tbl))
+        return err_ro();
+    else
+        return tbl;
 }
 
 

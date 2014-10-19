@@ -46,7 +46,7 @@ tbl_t *vkeys(void);
 
 // Performs lexical analysis on current location in string
 // Updates position, stores token type in tok, and value in val
-void vlex(vstate_t *);
+err_t vlex(vstate_t *);
 
 
 #endif

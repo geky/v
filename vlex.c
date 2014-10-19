@@ -4,6 +4,7 @@
 #include "var.h"
 #include "num.h"
 #include "str.h"
+#include "err.h"
 
 #include <assert.h>
 
@@ -37,20 +38,19 @@ tbl_t *vkeys(void) {
 
 
 // Lexer definitions for V's tokens
-extern void (* const vlexs[256])(vstate_t *);
+extern err_t (* const vlexs[256])(vstate_t *);
 
-__attribute__((noreturn))
-static void vl_bad(vstate_t *vs);
-static void vl_ws(vstate_t *vs);
-static void vl_com(vstate_t *vs);
-static void vl_op(vstate_t *vs);
-static void vl_kw(vstate_t *vs);
-static void vl_tok(vstate_t *vs);
-static void vl_set(vstate_t *vs);
-static void vl_sep(vstate_t *vs);
-static void vl_nl(vstate_t *vs);
-static void vl_num(vstate_t *vs);
-static void vl_str(vstate_t *vs);
+static err_t vl_bad(vstate_t *vs);
+static err_t vl_ws(vstate_t *vs);
+static err_t vl_com(vstate_t *vs);
+static err_t vl_op(vstate_t *vs);
+static err_t vl_kw(vstate_t *vs);
+static err_t vl_tok(vstate_t *vs);
+static err_t vl_set(vstate_t *vs);
+static err_t vl_sep(vstate_t *vs);
+static err_t vl_nl(vstate_t *vs);
+static err_t vl_num(vstate_t *vs);
+static err_t vl_str(vstate_t *vs);
 
 
 // Helper function for skipping whitespace
@@ -94,22 +94,21 @@ static void vskip(vstate_t *vs) {
 }
 
 
-__attribute__((noreturn))
-static void vl_bad(vstate_t *vs) {
-    assert(false); //TODO: errors: bad parse
+static err_t vl_bad(vstate_t *vs) {
+    return err_parse();
 }
 
-static void vl_ws(vstate_t *vs) {
+static err_t vl_ws(vstate_t *vs) {
     vskip(vs);
     return vlex(vs);
 }
 
-static void vl_com(vstate_t *vs) {
+static err_t vl_com(vstate_t *vs) {
     vskip(vs);
     return vlex(vs);
 }
 
-static void vl_op(vstate_t *vs) {
+static err_t vl_op(vstate_t *vs) {
     const str_t *kw = vs->pos++;
 
     while (vs->pos < vs->end && (vlexs[*vs->pos] == vl_op ||
@@ -130,9 +129,11 @@ static void vl_op(vstate_t *vs) {
     } else {
         vs->tok = VT_OP;
     }
+
+    return 0;
 }
 
-static void vl_kw(vstate_t *vs) {
+static err_t vl_kw(vstate_t *vs) {
     const str_t *kw = vs->pos++;
 
     while (vs->pos < vs->end && (vlexs[*vs->pos] == vl_kw ||
@@ -155,46 +156,55 @@ static void vl_kw(vstate_t *vs) {
     } else {
         vs->tok = tok.data;
     }
+
+    return 0;
 }
 
-static void vl_tok(vstate_t *vs) {
+static err_t vl_tok(vstate_t *vs) {
     vs->tok = *vs->pos++;
+    return 0;
 }
 
-static void vl_set(vstate_t *vs) {
+static err_t vl_set(vstate_t *vs) {
     if (!vs->left)
         return vl_op(vs);
 
     vs->tok = VT_SET;
     vs->pos++;
+    return 0;
 }
 
-static void vl_sep(vstate_t *vs) {
+static err_t vl_sep(vstate_t *vs) {
     vs->tok = VT_SEP;
     vs->pos++;
+    return 0;
 }
 
-static void vl_nl(vstate_t *vs) {
+static err_t vl_nl(vstate_t *vs) {
     if (vs->paren)
         return vl_ws(vs);
     else
         return vl_sep(vs);
 }       
 
-static void vl_num(vstate_t *vs) {
+static err_t vl_num(vstate_t *vs) {
     vs->tok = VT_LIT;
     vs->val = num_parse(&vs->pos, vs->end);
+
+    return iserr(vs->val) ? var_tbl(vs->val) : 0;
 }
 
-static void vl_str(vstate_t *vs) {
+static err_t vl_str(vstate_t *vs) {
     vs->tok = VT_LIT;
     vs->val = str_parse(&vs->pos, vs->end);
+
+    return iserr(vs->val) ? var_tbl(vs->val) : 0;
 }
 
 
 // Lookup table of lex functions based 
 // only on first character of token
-void (* const vlexs[256])(vstate_t *) = {
+err_t (* const vlexs[256])(vstate_t *) = {
 /* 00 01 02 03 */   vl_bad,   vl_bad,   vl_bad,   vl_bad,
 /* 04 05 06 \a */   vl_bad,   vl_bad,   vl_bad,   vl_bad,
 /* \b \t \n \v */   vl_bad,   vl_ws,    vl_nl,    vl_ws,
@@ -264,10 +274,12 @@ void (* const vlexs[256])(vstate_t *) = {
 
 // Performs lexical analysis on the passed string
 // Value is stored in lval and its type is returned
-void vlex(vstate_t *vs) {
-    if (vs->pos < vs->end)
+err_t vlex(vstate_t *vs) {
+    if (vs->pos < vs->end) {
         return vlexs[*vs->pos](vs);
-    else
+    } else {
         vs->tok = 0;
+        return 0;
+    }
 }
 

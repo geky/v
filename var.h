@@ -16,17 +16,14 @@
 // three bits of each var
 // Highest bit indicates if reference counted
 typedef enum type {
-    TYPE_NIL = 0x0, // nil - nil
-    TYPE_NUM = 0x1, // number - 12.3
-
-    TYPE_BFN = 0x2, // builtin function
-    TYPE_SFN = 0x3, // builtin function with scope
-
-    TYPE_TBL = 0x4, // table - ['a':1, 'b':2, 'c':3]
-    TYPE_OBJ = 0x5, // wrapped table - obj(['a':1, 'b':2])
-
-    TYPE_STR = 0x6, // string - "hello"
-    TYPE_FN  = 0x7, // function - fn() { return 5 }
+    TYPE_NIL = 0x0, // nil      - nil
+    TYPE_ERR = 0x1, // error    - error('oh no!')
+    TYPE_NUM = 0x2, // number   - 12.3
+    TYPE_BFN = 0x3, // builtin function
+    TYPE_TBL = 0x4, // table    - ['a':1, 'b':2, 'c':3]
+    TYPE_OBJ = 0x5, // object   - obj(['a':1, 'b':2])
+    TYPE_STR = 0x6, // string   - 'hello'
+    TYPE_FN  = 0x7, // function - fn() { return 'hello' }
 } type_t;
 
 
@@ -47,8 +44,7 @@ typedef struct fn fn_t;
 
 // Base functions
 #define v_fn __attribute__((aligned(8)))
-typedef v_fn struct var bfn_t(tbl_t *a);
-typedef v_fn struct var sfn_t(tbl_t *a, tbl_t *s);
+typedef v_fn struct var bfn_t(tbl_t *a, tbl_t *s);
 
 
 // Actual var type declariation
@@ -72,7 +68,6 @@ typedef struct var {
                 // function representations
                 fn_t *fn;
                 bfn_t *bfn;
-                sfn_t *sfn;
             };
 
             union {
@@ -98,12 +93,13 @@ typedef struct var {
 
 // properties of variables
 static inline bool var_isnil(var_t v) { return !v.meta; }
+static inline bool var_iserr(var_t v) { return v.meta == TYPE_ERR; }
 static inline bool var_isnum(var_t v) { return v.type == TYPE_NUM; }
 static inline bool var_isstr(var_t v) { return v.type == TYPE_STR; }
-static inline bool var_istbl(var_t v) { return (6 & v.meta) == 4; }
 static inline bool var_isobj(var_t v) { return v.type == TYPE_OBJ; }
-static inline bool var_isfn(var_t v)  { return (6 & v.meta) == 2 || 
-                                               v.type == TYPE_FN; }
+static inline bool var_istbl(var_t v) { return (v.meta & 6) == 4; }
+static inline bool var_isfn (var_t v) { return (v.meta & 3) == 3; }
+static inline bool var_isinv(var_t v) { return !(v.meta & 6); }
 
 // definitions for accessing components
 static inline ref_t *var_ref(var_t v)  { v.type = 0; return v.ref; }
@@ -145,13 +141,15 @@ static inline var_t vstr(const str_t *s, len_t off, len_t len) {
     return v;
 }
 
-static inline var_t vfn(fn_t *f, tbl_t *s) {
-    var_t v;
-    v.fn = f;
-    v.tbl = s;
-    v.type = TYPE_FN;
-    return v;
-}
+#define vcstr(c) ({                         \
+    static struct {                         \
+        ref_t r; len_t l;                   \
+        const str_t s[sizeof(c)-1];         \
+    } _vcstr = { 1, sizeof(c)-1, {(c)}};    \
+                                            \
+    _vcstr.r++;                             \
+    vstr(_vcstr.s, 0, sizeof(c)-1);         \
+})
 
 static inline var_t vtbl(tbl_t *t) {
     var_t v;
@@ -169,30 +167,28 @@ static inline var_t vobj(tbl_t *t) {
     return v;
 }
 
-static inline var_t vbfn(bfn_t *f) {
+static inline var_t vfn(fn_t *f, tbl_t *s) {
+    var_t v;
+    v.fn = f;
+    v.tbl = s;
+    v.type = TYPE_FN;
+    return v;
+}
+
+static inline var_t vbfn(bfn_t *f, tbl_t *s) {
     var_t v;
     v.bfn = f;
+    v.tbl = s;
     v.type = TYPE_BFN;
     return v;
 }
 
-static inline var_t vsfn(sfn_t *f, tbl_t *s) {
+static inline var_t verr(void *e) {
     var_t v;
-    v.sfn = f;
-    v.tbl = s;
-    v.type = TYPE_SFN;
+    v.data = 1 | (uint32_t)e;
+    v.meta = TYPE_ERR;
     return v;
 }
-
-#define vcstr(c) ({                         \
-    static struct {                         \
-        ref_t r; len_t l;                   \
-        const str_t s[sizeof(c)-1];         \
-    } _vcstr = { 1, sizeof(c)-1, {(c)}};    \
-                                            \
-    _vcstr.r++;                             \
-    vstr(_vcstr.s, 0, sizeof(c)-1);         \
-})
 
 
 // Mapping of reference counting functions
@@ -203,7 +199,7 @@ extern void fn_destroy(void *);
 static inline void var_inc(var_t v) {
     if (4 & v.meta)
         vref_inc(v.ref);
-    if (!(3 & ~v.meta))
+    if (1 & v.meta)
         vref_inc(v.tbl);
 }
 
@@ -214,7 +210,7 @@ static inline void var_dec(var_t v) {
 
     if (4 & v.meta)
         vref_dec(v.ref, dtors[3 & v.meta]);
-    if (!(3 & ~v.meta))
+    if (1 & v.meta)
         vref_dec(v.tbl, tbl_destroy);
 }
 

@@ -119,9 +119,11 @@ var_t fn_call(fn_t *f, tbl_t *args, tbl_t *closure) {
 var_t fn_repr(var_t v) {
     v.type &= ~3;
 
+    int i;
     str_t *out = str_create(13);
     str_t *res = out;
-    int i;
+    if (iserr(out))
+        return verr(out);
 
     *res++ = 'f';
     *res++ = 'n';

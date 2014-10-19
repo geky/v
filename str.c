@@ -2,21 +2,25 @@
 
 #include "num.h"
 #include "mem.h"
+#include "err.h"
 
 #include <assert.h>
 
 
 // Functions for creating strings
 str_t *str_create(len_t size) {
-    len_t *len = vref_alloc(size + sizeof(len_t));
-    *len = size;
+    str_t *res = vref_alloc(size + sizeof(len_t));
+    if (iserr(res))
+        return res;
 
-    return (str_t *)(len + 1);
+    *(len_t*)res = size;
+
+    return res + sizeof(len_t);
 }
 
 // Called by garbage collector to clean up
 void str_destroy(void *m) {
-    vref_dealloc(m, *(len_t *)m + sizeof(len_t));
+    vref_dealloc(m, *(len_t*)m + sizeof(len_t));
 }
 
 // Returns true if both variables are equal
@@ -47,7 +51,7 @@ var_t str_parse(const str_t **off, const str_t *end) {
 
     while (*str != quote) {
         if (str == end)
-            assert(false); // TODO error here: unterminated string
+            return verr(err_parse());
 
         if (*str == '\\' && end-str >= 2) {
             switch (str[1]) {
@@ -102,10 +106,14 @@ var_t str_parse(const str_t **off, const str_t *end) {
         }
     }
 
-    assert(size <= VMAXLEN); // TODO error
+    if (size > VMAXLEN)
+        return verr(err_len());
 
     str_t *out = str_create(size);
     str_t *res = out;
+    if (iserr(out))
+        return verr(out);
+
     str = *off + 1;
 
     while (*str != quote) {
@@ -185,10 +193,15 @@ var_t str_repr(var_t v) {
         str++;
     }
 
-    assert(size <= VMAXLEN); // TODO assert on size
+    if (size > VMAXLEN)
+        return verr(err_len());
 
     str_t *out = str_create(size);
     str_t *res = out;
+    if (iserr(out))
+        return verr(out);
+
+
     str = var_str(v);
 
     *res++ = '\'';

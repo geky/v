@@ -18,25 +18,16 @@ __attribute__((aligned(8)));
 // simple wrapper over malloc and free if available
 // returns 0 when size == 0
 void *valloc(size_t size);
-void *vrealloc(void *, size_t prev, size_t size);
-void vdealloc(void *, size_t size);
+void *vrealloc(void *m, size_t prev, size_t size);
+void vdealloc(void *m, size_t size);
 
 
 // Garbage collected memory based on reference counting
 // Each block of memory prefixed with ref_t reference
 // count. Deallocated immediately when ref hits zero.
 // It is up to the user to avoid cyclic dependencies.
-static inline void *vref_alloc(size_t size) {
-    ref_t *m = valloc(sizeof(ref_t) + size);
-
-    // start with a count of 1
-    *m = 1;
-    return m + 1;
-}
-
-static inline void vref_dealloc(void *m, size_t size) {
-    vdealloc(m, sizeof(ref_t) + size);
-}
+void *vref_alloc(size_t size);
+void vref_dealloc(void *m, size_t size);
 
 static inline void vref_inc(void *m) {
     ref_t *ref = (ref_t*)(~0x7 & (uint32_t)m);

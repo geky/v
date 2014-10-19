@@ -1,5 +1,6 @@
 #include "num.h"
 #include "str.h"
+#include "err.h"
 
 
 // Returns true if both variables are equal
@@ -28,8 +29,7 @@ hash_t num_hash(var_t v) {
 }
 
 
-// TODO check this
-// TODO add bounds checking
+// Parses a string and returns a number
 var_t num_parse(const str_t **off, const str_t *end) {
     const str_t *str = *off;
     num_t res = 0;
@@ -157,6 +157,8 @@ var_t num_repr(var_t v) {
     } else {
         str_t *out = str_create(VNUMLEN);
         str_t *res = out;
+        if (iserr(out))
+            return verr(out);
 
         if (v.num < 0.0) {
             v.num = -v.num;

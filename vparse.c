@@ -9,57 +9,75 @@
 
 // Parsing error handling
 #define vunexpected(vs) _vunexpected(vs, __FUNCTION__)
-__attribute__((noreturn))
-static void _vunexpected(vstate_t *vs, const char *fn) {
+static err_t _vunexpected(vstate_t *vs, const char *fn) {
     printf("\033[31munexpected (%d) in %s\033[0m\n", vs->tok, fn);
-    assert(false); // TODO make this throw actual messages
+    return err_parse();
 }
 
 // Expect a token or fail
 #define vexpect(vs, tok) _vexpect(vs, tok, __FUNCTION__)
-static void _vexpect(vstate_t *vs, vtok_t tok, const char *fn) {
+static err_t _vexpect(vstate_t *vs, vtok_t tok, const char *fn) {
     if (vs->tok != tok) {
         printf("\033[31mexpected (%d) not (%d) in %s\033[0m\n", tok, vs->tok, fn);
-        assert(false); // TODO errors
+        return err_parse();
     }
 
     vlex(vs);
+
+    return 0;
 }
 
 
 // Allocation functions for managing bytecode space
-static void venlarge(vstate_t *vs, int count) {
+static err_t venlarge(vstate_t *vs, int count) {
     struct vfnstate *fn = vs->fn;
     fn->ins += count;
 
     while (fn->ins > fn->len) {
-        assert(((int)fn->len << 1) <= VMAXLEN); // TODO errors
+        if (((int)fn->len << 1) > VMAXLEN)
+            return err_len();
+
         fn->len <<= 1;
     }
-        
-    fn->bcode = vrealloc(fn->bcode, fn->len, fn->len << 1);
+
+    void *ptr = vrealloc(fn->bcode, fn->len, fn->len << 1);
+    if (iserr(ptr))
+        return ptr;
+
+    fn->bcode = ptr;
+
+    return 0;
 }
 
-static void venlargein(vstate_t *vs, int count, int ins) {
-    venlarge(vs, count);
+static err_t venlargein(vstate_t *vs, int count, int ins) {
+    onerr(err, venlarge(vs, count), { 
+        return err;
+    })
 
     memmove(&vs->fn->bcode[ins] + count,
             &vs->fn->bcode[ins], 
             vs->fn->ins-count - ins);
+
+    return 0;
 }
 
 
 // Different encoding calls
-static void venc(vstate_t *vs, vop_t op) {
+static err_t venc(vstate_t *vs, vop_t op) {
     int count = vcount(op, 0);
-    venlarge(vs, count);
-    vencode(&vs->fn->bcode[vs->fn->ins-count], op, 0);
-}
+    onerr(err, venlarge(vs, count), { return err; })
 
-static void venca(vstate_t *vs, vop_t op, varg_t arg) {
+    vencode(&vs->fn->bcode[vs->fn->ins-count], op, 0);
+
+    return 0;}
+
+static err_t venca(vstate_t *vs, vop_t op, varg_t arg) {
     int count = vcount(op | VOP_ARG, arg);
-    venlarge(vs, count);
+    onerr(err, venlarge(vs, count), { return err; })
+
     vencode(&vs->fn->bcode[vs->fn->ins-count], op | VOP_ARG, arg);
+
+    return 0;
 }
 
 __attribute__((const))
@@ -98,7 +116,7 @@ static varg_t vaccvar(vstate_t *vs, var_t v) {
 static void vpatch(vstate_t *vs, tbl_t *jtbl, int ins) {
     tbl_for(k, v, jtbl, {
         vinserta(vs, VJUMP, ins - (v.data+vs->jsize), v.data);
-    });
+    })
 
     tbl_dec(jtbl);
 }
@@ -131,7 +149,7 @@ static void vunpack(vstate_t *vs, tbl_t *map) {
             venca(vs, VLOOKDN, var_num(k));
             venc(vs, VINSERT);
         }
-    });
+    })
 
     venc(vs, VDROP);
     venc(vs, VDROP);
